@@ -1,21 +1,12 @@
-# Turkish Music Emotion: random forest vs class-balanced calibrated LightGBM
+Stand-in experiment on the UCI Turkish Music Emotion dataset (id 862).
 
-Stand-in experiment comparing a default RandomForestClassifier (baseline) with a
-class-balanced LightGBM classifier using isotonic calibration (improved) on the
-UCI Turkish Music Emotion dataset (id 862).
+Question: can a model chosen by cross-validated search give better music-emotion suggestions (macro-F1 on a held-out split) than a default random forest?
 
-## Data loading
-The `ucimlrepo` API refuses to import dataset 862 ("not available for import"), so
-`analysis.py` first tries `ucimlrepo` and, if that fails, downloads the official UCI
-zip directly with `requests` and reads the spreadsheet with `pandas`/`openpyxl`.
-The data is the same; the method is unchanged.
+How to run: `pip install -r requirements.txt && python analysis.py`. Writes `results.json` and `figures/baseline_vs_improved.png`.
 
-## Run
-    pip install -r requirements.txt
-    python analysis.py
+Method: one stratified 80/20 split (seed 42). The baseline is a default random forest. The improved model is chosen from a small candidate set (RBF SVM, a soft-voting ensemble of SVM + random forest + LightGBM, and a LightGBM grid), all class-balanced. Selection uses 5-fold stratified CV macro-F1 on the training split only. The chosen model is refit with seeds 42, 43 and 44, and the test set is scored once per model.
 
-Outputs `results.json` and `figures/baseline_vs_improved.png`. Seed 42; all tuning is
-5-fold CV on the training split; the test split is used once per model.
+Caveats: the test split is small (about 80 songs), so differences are noisy. The seeds capture model randomness only. The paper's own method is not reproduced.
 
 ## Reference
 
