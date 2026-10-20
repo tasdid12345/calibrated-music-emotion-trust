@@ -8,6 +8,28 @@ Method: one stratified 80/20 split (seed 42). The baseline is a default random f
 
 Caveats: the test split is small (about 80 songs), so differences are noisy. The seeds capture model randomness only. The paper's own method is not reproduced.
 
+## Results (latest run)
+
+On the Turkish Music Emotion (UCI) test split (80 songs), a standard random-forest classifier reached 75.2% macro-F1 and 0.347 Brier, while my selected class-balanced ensemble reached 75.3% macro-F1 and 0.307 Brier, a negligible F1 gain within split noise.
+
+| Metric | Value |
+|---|---|
+| baseline_score | 0.7518 |
+| baseline_score_std | 0.0163 |
+| improved_score | 0.7535 |
+| improved_score_std | 0 |
+| improvement | 0.001675 |
+| baseline_accuracy | 0.7583 |
+| improved_accuracy | 0.7625 |
+| baseline_brier | 0.3466 |
+| improved_brier | 0.3073 |
+| brier_improvement | 0.03932 |
+| best_train_cv_macro_f1 | 0.8 |
+
+Run on 2026-10-20. Full output: [results.json](results.json) · [run.log](run.log)
+
+Notes: Selected configuration: ensemble {'C': 10} (train CV macro-F1 0.8000). Single stratified split, so the test set is small (about 80 songs) and differences are noisy; the three seeds capture model randomness only, not split variability. The test set was not used for any selection. Brier score is a calibration proxy, not a user-trust measurement. This is a stand-in experiment; the motivating paper's model and results are not stated and are not reproduced. The ucimlrepo import of dataset 862 is refused by the service, so the script falls back to downloading the same official UCI zip directly; the data content is identical.
+
 ## Reference
 
 This project is motivated by the following paper:
