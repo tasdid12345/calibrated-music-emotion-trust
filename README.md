@@ -1,25 +1,21 @@
-# Music-Emotion Suggestions: Random Forest vs Calibrated LightGBM
+# Turkish Music Emotion: random forest vs class-balanced calibrated LightGBM
 
-Motivation: Tools that support musicians' practices, such as the design framework in "An AI-based design framework to support musicians' practices" (2018), depend on suggestions a user can trust. A suggestion model that is accurate on average but poorly calibrated, or that ignores minority emotion classes, may give misleading feedback. This experiment checks a simple, cheap alternative on a small public music-audio dataset.
+Stand-in experiment comparing a default RandomForestClassifier (baseline) with a
+class-balanced LightGBM classifier using isotonic calibration (improved) on the
+UCI Turkish Music Emotion dataset (id 862).
 
-Question: Can a class-balanced, calibrated gradient-boosting model give more accurate and better-calibrated music-emotion suggestions than a standard random forest on a public music-audio feature dataset?
+## Data loading
+The `ucimlrepo` API refuses to import dataset 862 ("not available for import"), so
+`analysis.py` first tries `ucimlrepo` and, if that fails, downloads the official UCI
+zip directly with `requests` and reads the spreadsheet with `pandas`/`openpyxl`.
+The data is the same; the method is unchanged.
 
-Dataset: UCI Turkish Music Emotion (about 400 songs, audio-derived features, four emotion classes), loaded with the `ucimlrepo` package. This is a public stand-in dataset, not the paper's own data (`same_as_paper: false`).
+## Run
+    pip install -r requirements.txt
+    python analysis.py
 
-Baseline vs improved model:
-- Baseline: standard random forest classifier with default settings.
-- Improved: class-balanced LightGBM classifier with a small cross-validated hyper-parameter search on the training split, and cross-validated isotonic probability calibration.
-
-Both models use the same stratified 80/20 split (seed 42), the same scaling fitted on the training split, and the same evaluation code. The main metric is macro-F1 on the test split; accuracy and multiclass Brier score are secondary.
-
-## How to run
-
-```bash
-pip install -r requirements.txt
-python analysis.py
-```
-
-Results: written to `results.json` (charts are saved to `figures/`).
+Outputs `results.json` and `figures/baseline_vs_improved.png`. Seed 42; all tuning is
+5-fold CV on the training split; the test split is used once per model.
 
 ## Reference
 

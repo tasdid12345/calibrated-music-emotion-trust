@@ -1,45 +1,96 @@
 """Stand-in experiment: standard random forest (baseline) vs class-balanced,
 isotonic-calibrated LightGBM (improved) on the UCI Turkish Music Emotion dataset."""
+import io
 import json
 import os
 import socket
 import sys
 import time
 import warnings
+import zipfile
 
 import matplotlib
 matplotlib.use("Agg")  # headless plotting on CI
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import requests
 from lightgbm import LGBMClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from ucimlrepo import fetch_ucirepo
 
 SEED = 42
 SEEDS = [42, 43, 44]          # both models are run with these seeds
 DATASET_ID = 862              # UCI "Turkish Music Emotion"
 SOURCE_URL = "https://archive.ics.uci.edu/dataset/862/turkish+music+emotion"
+ZIP_URL = "https://archive.ics.uci.edu/static/public/862/turkish+music+emotion.zip"
 MAX_ROWS = 200_000            # subsample cap (data is ~400 rows, so not triggered)
 TEST_SIZE = 0.2
 
 warnings.filterwarnings("ignore")  # silence LightGBM/sklearn chatter in CI logs
 
 
-def load_data(retries=5):
-    """Download via ucimlrepo; 60 s socket timeout, exponential backoff on failure."""
-    socket.setdefaulttimeout(60)
+def _load_via_ucimlrepo():
+    """First attempt: the ucimlrepo API. Raises if the dataset is not importable."""
+    from ucimlrepo import fetch_ucirepo
+    ds = fetch_ucirepo(id=DATASET_ID)
+    X = ds.data.features
+    y = ds.data.targets.iloc[:, 0]
+    return X, y
+
+
+def _load_via_zip(retries=5):
+    """Fallback: download the official static zip from the UCI archive directly.
+    Exponential backoff on failure, 60 s socket timeout."""
+    content = None
     for attempt in range(retries):
         try:
-            return fetch_ucirepo(id=DATASET_ID)
+            r = requests.get(ZIP_URL, timeout=60)
+            r.raise_for_status()
+            content = r.content
+            break
         except Exception as err:  # HTTP 429/5xx, timeouts, connection resets
             wait = 2 ** attempt
-            print(f"download failed ({err}); retrying in {wait}s")
+            print(f"zip download failed ({err}); retrying in {wait}s")
             time.sleep(wait)
-    sys.exit("could not download the dataset")
+    if content is None:
+        sys.exit("could not download the dataset")
+
+    zf = zipfile.ZipFile(io.BytesIO(content))
+    names = zf.namelist()
+    data_files = [n for n in names if n.lower().endswith((".xlsx", ".xls", ".csv"))
+                  and not n.startswith("__MACOSX")]
+    if not data_files:
+        sys.exit(f"no data file found in zip: {names}")
+    name = data_files[0]
+    if name.lower().endswith(".csv"):
+        df = pd.read_csv(zf.open(name))
+    else:
+        df = pd.read_excel(io.BytesIO(zf.read(name)), engine="openpyxl")
+
+    label_cols = [c for c in df.columns if str(c).strip().lower() == "class"]
+    label_col = label_cols[0] if label_cols else df.columns[-1]
+    y = df[label_col]
+    X = df.drop(columns=[label_col])
+    return X, y
+
+
+def load_data():
+    """Return (features DataFrame, label Series) for the Turkish Music Emotion dataset."""
+    socket.setdefaulttimeout(60)
+    try:
+        X, y = _load_via_ucimlrepo()
+        print("loaded via ucimlrepo")
+    except Exception as err:
+        print(f"ucimlrepo import unavailable ({err}); falling back to direct zip download")
+        X, y = _load_via_zip()
+        print("loaded via direct UCI zip download")
+    X = X.apply(pd.to_numeric, errors="coerce")
+    X = X.dropna(axis=1, how="all")  # drop non-numeric / empty columns
+    return X, y
 
 
 def brier(proba, y_idx, n_classes):
@@ -65,9 +116,9 @@ def mean_std(runs, key):
 
 def main():
     t0 = time.time()
-    ds = load_data()
-    X = ds.data.features.to_numpy(dtype=float)
-    y_raw = ds.data.targets.iloc[:, 0].astype(str).to_numpy()
+    feats, labels = load_data()
+    X = feats.to_numpy(dtype=float)
+    y_raw = labels.astype(str).to_numpy()
     keep = ~np.isnan(X).any(axis=1)  # drop rows with missing features
     X, y_raw = X[keep], y_raw[keep]
     if len(X) > MAX_ROWS:  # subsample very large data
@@ -146,7 +197,7 @@ def main():
                   "calibration (hyper-parameters chosen by 5-fold CV on train). Both run with seeds "
                   "42, 43, 44; test set used once per model.",
         "dataset": {
-            "name": "Turkish Music Emotion (UCI, via ucimlrepo)",
+            "name": "Turkish Music Emotion (UCI)",
             "source_url": SOURCE_URL,
             "n_rows": int(len(X)),
             "n_train": int(len(Xtr)),
@@ -165,8 +216,9 @@ def main():
                  "Isotonic calibration is fitted by internal CV on a small training set and can be "
                  "noisy. Brier score is a calibration proxy for trust, not a user-trust measurement. "
                  "This is a stand-in experiment; the motivating paper's model and results are not "
-                 "stated and are not reproduced. Downloads retry on any exception with exponential "
-                 "backoff and a 60 s socket timeout.",
+                 "stated and are not reproduced. The ucimlrepo import of dataset 862 is refused by "
+                 "the service ('not available for import'), so the script falls back to downloading "
+                 "the same official UCI zip directly; the data content is identical.",
     }
     with open("results.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
